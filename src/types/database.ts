@@ -1,3 +1,10 @@
+export type Category = {
+  id: string;
+  created_at: string;
+  name: string;
+  restaurant_id: string;
+};
+
 export type Ingredient = {
   id: string;
   restaurant_id: string;
@@ -10,16 +17,9 @@ export type Ingredient = {
   odoo_product_id: number | null;
 };
 
-// TAMBAHAN BARU DI BAWAH INI:
-export type Category = {
-  id: string;
-  name: string;
-};
-
-// ... type Ingredient dan Category tetap sama ...
-
-// Tambahkan Type Baru untuk Resep yang memuat Info Bahan
 export type RecipeWithIngredient = {
+  id: string; // Tambahkan id jika perlu
+  ingredient_id: string;
   quantity_needed: number;
   ingredient: {
     name: string;
@@ -28,7 +28,7 @@ export type RecipeWithIngredient = {
   };
 };
 
-// Update MenuItem agar menyertakan resep
+// --- INI DEFINISI MENUITEM YANG BENAR (HANYA SATU) ---
 export type MenuItem = {
   id: string;
   restaurant_id: string;
@@ -37,50 +37,39 @@ export type MenuItem = {
   price: number;
   is_active: boolean;
   image_url: string | null;
-  category?: { name: string }; // Join Category
-  recipes?: RecipeWithIngredient[]; // Join Recipes -> Ingredients
+  
+  // Kolom baru untuk Resep
+  cooking_instructions?: string | null;
+  recipe_notes?: string | null;
+
+  // Relasi (Joins)
+  category?: { name: string }; 
+  recipes?: RecipeWithIngredient[]; 
 };
 
-// ... (kode sebelumnya)
-
-// TAMBAHAN BARU:
 export type Recipe = {
   id: string;
   menu_item_id: string;
   ingredient_id: string;
   quantity_needed: number;
-  // Untuk join (tampilan):
   ingredient?: Ingredient;
 };
-
-// Tambahkan di src/types/database.ts
 
 export type PosSession = {
   id: string;
   restaurant_id: string;
-  cashier_id: string;
+  cashier_id: string | null;
   start_time: string;
   end_time: string | null;
   starting_cash: number;
   ending_cash: number;
   total_cash_sales: number;
   total_non_cash_sales: number;
-  status: 'open' | 'closed';
-  note: string | null;
-};
-
-export type MenuItem = {
-  id: string;
-  restaurant_id: string;
-  category_id: string | null;
-  name: string;
-  price: number;
-  is_active: boolean;
-  image_url: string | null;
-  // --- PASTIKAN 2 BARIS INI ADA ---
-  cooking_instructions?: string | null;
-  recipe_notes?: string | null;
-  // --------------------------------
-  category?: { name: string }; 
-  recipes?: RecipeWithIngredient[]; 
+  status: string; // Bisa 'open' | 'closed'
+  note?: string | null;
+  
+  // Tambahan untuk Laporan (agar tidak error jika dipanggil)
+  cashier?: {
+    full_name: string;
+  } | null;
 };

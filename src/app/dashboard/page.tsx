@@ -4,7 +4,7 @@ import { useAuth } from '@/context/AuthContext'
 import { useEffect, useState } from 'react'
 
 export default function DashboardPage() {
-  const { user } = useAuth()
+  const { user, logout } = useAuth()
   const [greeting, setGreeting] = useState('')
 
   useEffect(() => {
@@ -15,12 +15,24 @@ export default function DashboardPage() {
     else setGreeting('Selamat Malam')
   }, [])
 
+  const handleLogout = () => {
+      if(confirm("Ganti Akun?")) logout()
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 p-8">
-      <div className="max-w-5xl mx-auto">
+      <div className="max-w-5xl mx-auto relative">
         
+        {/* Tombol Logout Pojok Kanan */}
+        <button 
+            onClick={handleLogout}
+            className="absolute top-0 right-0 text-red-500 hover:text-red-700 font-bold text-sm flex items-center gap-2 bg-white px-4 py-2 rounded-full shadow-sm hover:shadow-md transition"
+        >
+            🚪 Logout
+        </button>
+
         {/* Header Sambutan */}
-        <div className="mb-10">
+        <div className="mb-10 pt-4">
           <h1 className="text-4xl font-bold text-slate-800">{greeting}, {user?.full_name?.split(' ')[0]}! 👋</h1>
           <p className="text-slate-500 mt-2 text-lg">Apa yang ingin Anda lakukan hari ini?</p>
         </div>
@@ -72,6 +84,16 @@ export default function DashboardPage() {
                     <div>
                         <h3 className="text-xl font-bold text-slate-800 group-hover:text-green-600 transition">Racik Resep</h3>
                         <p className="text-slate-400 text-sm">Hubungkan menu dengan bahan baku.</p>
+                    </div>
+                </div>
+             </Link>
+             {/* Kartu Laporan (BARU) */}
+             <Link href="/reports" className="group">
+                <div className="bg-white border border-slate-200 hover:border-slate-400 rounded-2xl p-6 shadow-sm hover:shadow-lg transition flex items-center gap-6">
+                    <div className="w-16 h-16 bg-blue-50 text-blue-500 rounded-xl flex items-center justify-center text-3xl">📈</div>
+                    <div>
+                        <h3 className="text-xl font-bold text-slate-800 group-hover:text-blue-600 transition">Laporan Keuangan</h3>
+                        <p className="text-slate-400 text-sm">Cek omset, audit kasir, & tren.</p>
                     </div>
                 </div>
              </Link>

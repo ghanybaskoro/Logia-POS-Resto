@@ -68,3 +68,19 @@ export type PosSession = {
   status: 'open' | 'closed';
   note: string | null;
 };
+
+export type MenuItem = {
+  id: string;
+  restaurant_id: string;
+  category_id: string | null;
+  name: string;
+  price: number;
+  is_active: boolean;
+  image_url: string | null;
+  // --- Tambahan Baru ---
+  cooking_instructions?: string | null;
+  recipe_notes?: string | null;
+  // ---------------------
+  category?: { name: string }; 
+  recipes?: RecipeWithIngredient[]; 
+};

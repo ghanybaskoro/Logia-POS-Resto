@@ -2,7 +2,8 @@
 import { useEffect, useState, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
 import { MenuItem, Category, PosSession } from "@/types/database";
-import { useAuth } from "@/context/AuthContext"; 
+import { useAuth } from "@/context/AuthContext";
+import { RESTAURANT_ID } from '@/lib/config';
 
 type CartItem = MenuItem & { qty: number };
 
@@ -22,8 +23,21 @@ type PaymentMethod = {
   name: string;
 }
 
+// TIPE DATA BARU UNTUK LAPORAN SHIFT DETIL
+type ShiftOrderDetail = {
+  id: string;
+  created_at: string;
+  payment_method: string;
+  total_amount: number;
+  items: {
+    quantity: number;
+    price_at_time: number;
+    menu_item_name: string;
+  }[];
+}
+
 export default function POSPage() {
-  const { user } = useAuth(); 
+  const { user, logout } = useAuth(); 
   
   // --- STATE DATA ---
   const [menus, setMenus] = useState<MenuItem[]>([]);
@@ -38,9 +52,14 @@ export default function POSPage() {
   // State Modal Shift
   const [showOpenShiftModal, setShowOpenShiftModal] = useState(false);
   const [showCloseShiftModal, setShowCloseShiftModal] = useState(false);
+  const [showShiftPrintModal, setShowShiftPrintModal] = useState(false);
+  
   const [startingCashInput, setStartingCashInput] = useState("");
   const [endingCashInput, setEndingCashInput] = useState("");
   const [shiftSummary, setShiftSummary] = useState({ cash: 0, nonCash: 0, expected: 0 });
+  
+  // STATE BARU: Menampung detail order untuk laporan shift
+  const [shiftOrders, setShiftOrders] = useState<ShiftOrderDetail[]>([]);
 
   // --- STATE UI ---
   const [loading, setLoading] = useState(true);
@@ -63,8 +82,6 @@ export default function POSPage() {
     receipt_footer: "Terima Kasih",
     tax_rate: 10,
   });
-
-  const RESTAURANT_ID = "eaaefe2f-bd7d-4a4b-a40d-ee775ec44130"; 
 
   // 1. Initial Fetch
   useEffect(() => {
@@ -118,13 +135,12 @@ export default function POSPage() {
   const handleOpenShift = async () => {
       if (!startingCashInput) return alert("Masukkan jumlah uang modal awal (0 jika tidak ada).");
       
-      // PERBAIKAN DISINI: Cek apakah user super-admin atau bukan
       const cashierIdToSend = user?.id === 'super-admin' ? null : user?.id;
 
       try {
           const { data, error } = await supabase.from('pos_sessions').insert([{
               restaurant_id: RESTAURANT_ID,
-              cashier_id: cashierIdToSend, // Gunakan ID yang sudah di-cek
+              cashier_id: cashierIdToSend,
               starting_cash: Number(startingCashInput),
               status: 'open',
               start_time: new Date().toISOString()
@@ -143,11 +159,26 @@ export default function POSPage() {
   const prepareCloseShift = async () => {
       if(!currentSession) return;
       
+      // 1. Fetch Orders Ringkas (Untuk hitung total)
       const { data: orders } = await supabase
         .from('orders')
         .select('total_amount, payment_method')
         .eq('session_id', currentSession.id);
 
+      // 2. Fetch Orders LENGKAP dengan Items (Untuk Print Struk Detil)
+      const { data: detailedOrders } = await supabase
+        .from('orders')
+        .select(`
+            id, created_at, payment_method, total_amount,
+            order_items (
+                quantity, price_at_time,
+                menu_item:menu_items ( name )
+            )
+        `)
+        .eq('session_id', currentSession.id)
+        .order('created_at', { ascending: true }); // Urutkan dari transaksi pertama
+
+      // Hitung Total Uang
       let cash = 0;
       let nonCash = 0;
 
@@ -159,6 +190,20 @@ export default function POSPage() {
           }
       });
 
+      // Format Data Detil untuk State
+      const formattedDetails: ShiftOrderDetail[] = detailedOrders?.map((o: any) => ({
+          id: o.id,
+          created_at: o.created_at,
+          payment_method: o.payment_method,
+          total_amount: o.total_amount,
+          items: o.order_items.map((item: any) => ({
+              quantity: item.quantity,
+              price_at_time: item.price_at_time,
+              menu_item_name: item.menu_item?.name || 'Item Terhapus'
+          }))
+      })) || [];
+
+      setShiftOrders(formattedDetails); // Simpan ke state untuk diprint nanti
       setShiftSummary({
           cash,
           nonCash,
@@ -173,6 +218,7 @@ export default function POSPage() {
       if(!endingCashInput) return alert("Masukkan total uang fisik yang dihitung.");
 
       try {
+          // 1. Update Database (Tutup Sesi)
           const { error } = await supabase.from('pos_sessions').update({
               end_time: new Date().toISOString(),
               ending_cash: Number(endingCashInput),
@@ -183,16 +229,21 @@ export default function POSPage() {
 
           if(error) throw error;
 
-          alert("Shift ditutup. Laporan tersimpan.");
+          // 2. Tutup Modal Input, Buka Modal Print Laporan
           setShowCloseShiftModal(false);
-          setCart([]);
-          setStartingCashInput("");
-          setEndingCashInput("");
-          checkActiveSession(); 
+          setShowShiftPrintModal(true); 
           
       } catch (err: any) {
           alert("Gagal tutup shift: " + err.message);
       }
+  }
+
+  const handleFinalLogout = () => {
+      setCart([]);
+      setStartingCashInput("");
+      setEndingCashInput("");
+      setShowShiftPrintModal(false);
+      logout(); 
   }
 
 
@@ -234,7 +285,6 @@ export default function POSPage() {
     if (!selectedPaymentMethod) return alert("Pilih metode pembayaran dulu!");
     if (!currentSession) return alert("Error: Sesi Shift tidak ditemukan. Refresh halaman."); 
     
-    // PERBAIKAN DISINI: Cek ID kasir juga saat simpan order
     const cashierIdToSend = user?.id === 'super-admin' ? null : user?.id;
 
     setIsCheckingOut(true);
@@ -245,7 +295,7 @@ export default function POSPage() {
         .insert([{
             restaurant_id: RESTAURANT_ID,
             session_id: currentSession.id, 
-            cashier_id: cashierIdToSend, // Gunakan ID yang valid atau null
+            cashier_id: cashierIdToSend,
             total_amount: grandTotal,
             payment_method: selectedPaymentMethod,
             status: "paid",
@@ -294,11 +344,20 @@ export default function POSPage() {
           .no-print { display: none !important; }
           aside, nav, header { display: none !important; }
           main { margin: 0 !important; padding: 0 !important; width: 100% !important; }
-          #printable-receipt { display: block !important; position: absolute; left: 0; top: 0; width: 100%; background: white; margin: 0; }
+          
+          #printable-receipt { display: none; } 
+          #printable-shift-report { display: none; } 
+
+          .print-receipt-mode #printable-receipt { display: block !important; }
+          .print-shift-mode #printable-shift-report { display: block !important; }
+
           @page { size: auto; margin: 0mm; }
           body { background: white; }
         }
       `}</style>
+
+      {/* Class Wrapper untuk Kontrol Print */}
+      <div className={showShiftPrintModal ? "print-shift-mode" : "print-receipt-mode"}>
 
       {/* UI UTAMA */}
       <div className="flex h-[calc(100vh-4rem)] gap-6 no-print">
@@ -308,7 +367,6 @@ export default function POSPage() {
             <div className="flex justify-between items-center">
               <div>
                   <h1 className="text-2xl font-bold text-slate-800">Kasir Restoran</h1>
-                  {/* Info Shift Aktif */}
                   {currentSession && (
                       <div className="flex items-center gap-2 text-xs text-green-600 font-medium mt-1">
                           <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
@@ -320,7 +378,6 @@ export default function POSPage() {
               <div className="flex gap-3">
                   <input type="text" placeholder="🔍 Cari menu..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="px-4 py-2 border border-slate-300 rounded-lg w-48 text-slate-900 bg-slate-50" />
                   
-                  {/* Tombol Tutup Shift */}
                   <button 
                     onClick={prepareCloseShift}
                     className="bg-slate-800 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-slate-900 shadow"
@@ -428,7 +485,7 @@ export default function POSPage() {
           </div>
       )}
 
-      {/* --- MODAL 2: TUTUP SHIFT --- */}
+      {/* --- MODAL 2: TUTUP SHIFT (INPUT SETORAN) --- */}
       {showCloseShiftModal && (
           <div className="fixed inset-0 bg-slate-900/90 z-50 flex items-center justify-center p-4 no-print">
               <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-0 overflow-hidden">
@@ -489,11 +546,31 @@ export default function POSPage() {
                         onClick={handleCloseShift}
                         className="flex-1 py-3 bg-red-600 text-white font-bold rounded-xl hover:bg-red-700 shadow-lg"
                       >
-                          Tutup & Logout
+                          Proses Tutup Shift
                       </button>
                   </div>
               </div>
           </div>
+      )}
+
+      {/* --- MODAL 3: CETAK LAPORAN SHIFT --- */}
+      {showShiftPrintModal && currentSession && (
+        <div className="fixed inset-0 bg-slate-900/90 z-50 flex items-center justify-center p-4 no-print">
+           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center">
+              <div className="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">🖨️</div>
+              <h2 className="text-xl font-bold text-slate-800 mb-2">Shift Telah Ditutup</h2>
+              <p className="text-slate-500 text-sm mb-6">Silakan cetak laporan shift sebagai bukti setoran kasir.</p>
+
+              <div className="space-y-3">
+                  <button onClick={handlePrint} className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 shadow-lg">
+                      Cetak Laporan Lengkap
+                  </button>
+                  <button onClick={handleFinalLogout} className="w-full py-3 bg-gray-100 text-gray-700 rounded-xl font-bold hover:bg-gray-200">
+                      Selesai & Logout
+                  </button>
+              </div>
+           </div>
+        </div>
       )}
 
       {/* --- MODAL PILIH PEMBAYARAN --- */}
@@ -548,8 +625,8 @@ export default function POSPage() {
         </div>
       )}
 
-      {/* --- STRUK CETAK --- */}
-      <div id="printable-receipt" className="hidden">
+      {/* --- STRUK CETAK BELANJA --- */}
+      <div id="printable-receipt">
         {lastTransaction && (
           <div className="p-2 font-mono text-xs leading-tight w-[58mm] mx-auto text-black bg-white">
             <div className="text-center mb-4 border-b border-black pb-2 border-dashed">
@@ -577,6 +654,101 @@ export default function POSPage() {
           </div>
         )}
       </div>
+
+      {/* --- STRUK LAPORAN SHIFT DETIL (UPDATE TERBARU) --- */}
+      <div id="printable-shift-report">
+          {currentSession && (
+              <div className="p-2 font-mono text-xs leading-tight w-[58mm] mx-auto text-black bg-white">
+                  <div className="text-center mb-4 border-b border-black pb-2 border-dashed">
+                      <h2 className="text-base font-bold uppercase">{settings.name}</h2>
+                      <p className="text-[10px]">LAPORAN TUTUP SHIFT</p>
+                  </div>
+                  
+                  <div className="mb-4 space-y-1">
+                      <p>PIC Kasir : {user?.full_name || "Unknown"}</p>
+                      <p>Mulai     : {new Date(currentSession.start_time).toLocaleString('id-ID')}</p>
+                      <p>Selesai   : {new Date().toLocaleString('id-ID')}</p>
+                  </div>
+
+                  <div className="mb-4 border-b border-black pb-2 border-dashed space-y-2">
+                      <div className="flex justify-between">
+                          <span>Modal Awal</span>
+                          <span>{currentSession.starting_cash.toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between">
+                          <span>Penjualan Tunai</span>
+                          <span>{shiftSummary.cash.toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between">
+                          <span>Penjualan Non-Tunai</span>
+                          <span>{shiftSummary.nonCash.toLocaleString()}</span>
+                      </div>
+                  </div>
+
+                  {/* BAGIAN BARU: RINCIAN TRANSAKSI DETIL */}
+                  <div className="mb-4 border-b border-black pb-2 border-dashed">
+                      <h3 className="font-bold text-center mb-2 border-b border-dashed pb-1">RINCIAN TRANSAKSI</h3>
+                      {shiftOrders.length === 0 ? (
+                          <p className="text-center text-[10px] italic">Tidak ada transaksi.</p>
+                      ) : (
+                          <div className="space-y-3">
+                              {shiftOrders.map((order, idx) => (
+                                  <div key={order.id} className="border-b border-dotted pb-2 last:border-0">
+                                      <div className="flex justify-between font-bold mb-1">
+                                          <span>#{order.id.slice(0,6)} ({new Date(order.created_at).toLocaleTimeString('id-ID')})</span>
+                                          <span>{order.payment_method}</span>
+                                      </div>
+                                      
+                                      {/* Loop Item per Transaksi */}
+                                      <div className="pl-2 space-y-1 mb-1">
+                                          {order.items.map((item, itemIdx) => (
+                                              <div key={itemIdx} className="flex justify-between text-[10px]">
+                                                  <span>{item.menu_item_name} x{item.quantity}</span>
+                                                  <span>{(item.quantity * item.price_at_time).toLocaleString()}</span>
+                                              </div>
+                                          ))}
+                                      </div>
+                                      
+                                      <div className="flex justify-between font-bold text-right">
+                                          <span>Total:</span>
+                                          <span>{order.total_amount.toLocaleString()}</span>
+                                      </div>
+                                  </div>
+                              ))}
+                          </div>
+                      )}
+                  </div>
+
+                  <div className="mb-6 space-y-2">
+                      <div className="flex justify-between font-bold">
+                          <span>Total Tunai Sistem</span>
+                          <span>{shiftSummary.expected.toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between">
+                          <span>Setoran Fisik</span>
+                          <span>{Number(endingCashInput).toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between font-bold">
+                          <span>Selisih</span>
+                          <span>{(Number(endingCashInput) - shiftSummary.expected).toLocaleString()}</span>
+                      </div>
+                  </div>
+
+                  <div className="mt-8 flex justify-between text-center pt-4">
+                      <div className="w-1/2">
+                          <p className="mb-8">( Kasir )</p>
+                          <p>{user?.full_name}</p>
+                      </div>
+                      <div className="w-1/2">
+                          <p className="mb-8">( Manager )</p>
+                          <p>................</p>
+                      </div>
+                  </div>
+              </div>
+          )}
+      </div>
+
+      </div> {/* End Wrapper */}
     </>
   );
 }

@@ -77,10 +77,10 @@ export type MenuItem = {
   price: number;
   is_active: boolean;
   image_url: string | null;
-  // --- Tambahan Baru ---
+  // --- PASTIKAN 2 BARIS INI ADA ---
   cooking_instructions?: string | null;
   recipe_notes?: string | null;
-  // ---------------------
+  // --------------------------------
   category?: { name: string }; 
   recipes?: RecipeWithIngredient[]; 
 };

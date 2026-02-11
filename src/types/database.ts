@@ -52,3 +52,19 @@ export type Recipe = {
   // Untuk join (tampilan):
   ingredient?: Ingredient;
 };
+
+// Tambahkan di src/types/database.ts
+
+export type PosSession = {
+  id: string;
+  restaurant_id: string;
+  cashier_id: string;
+  start_time: string;
+  end_time: string | null;
+  starting_cash: number;
+  ending_cash: number;
+  total_cash_sales: number;
+  total_non_cash_sales: number;
+  status: 'open' | 'closed';
+  note: string | null;
+};

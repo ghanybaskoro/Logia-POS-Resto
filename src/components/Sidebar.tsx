@@ -11,12 +11,13 @@ export default function Sidebar() {
   if (pathname === "/") return null;
 
   const menuItems = [
-    { name: "Kasir (POS)", href: "/pos", icon: "🛒" },
-    { name: "Daftar Menu", href: "/menu", icon: "🍔" },
-    { name: "Resep (BOM)", href: "/recipes", icon: "📜" },
-    { name: "Gudang (Inventory)", href: "/inventory", icon: "📦" },
-    { name: "Pengaturan", href: "/settings", icon: "⚙️" },
-  ];
+    { name: 'Dashboard', href: '/dashboard', icon: '🏠' }, // <--- TAMBAHAN BARU
+    { name: 'Kasir (POS)', href: '/pos', icon: '🛒' },
+    { name: 'Daftar Menu', href: '/menu', icon: '🍔' },
+    { name: 'Resep (BOM)', href: '/recipes', icon: '📜' },
+    { name: 'Gudang (Inventory)', href: '/inventory', icon: '📦' },
+    { name: 'Pengaturan', href: '/settings', icon: '⚙️' },
+  ]
 
   return (
     <aside className="w-64 bg-slate-900 text-white h-screen fixed left-0 top-0 overflow-y-auto flex flex-col shadow-xl z-50">
